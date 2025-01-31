@@ -6,16 +6,15 @@ import os
 load_dotenv()
 
 cliente = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+STATUS_COMPLETED = 'completed'
+STATUS_FAILED = 'failed'
 
-def generate_test_case_script(use_case, test_case):
-    company_doc = load_file('docs/acorde_lab.txt')
-
-    system_prompt = f"""
+def generate_test_case_script(test_case, document, dict_files, assistant, thread, model=STANDARD_MODEL):
+    question = f"""
         Você é um especialista em gerar scripts de teste para validar casos de uso e cenários de teste.
-        Considere o contexto da empresa disponível em: {company_doc}
-
+        
         Você deve fornecer um script em Python + Selenium e deve utilizar o chromium como driver. 
-        Não use headless. Use time.sleep(3) antes de fechar o script.
+        Use time.sleep(3) antes de fechar o script.
         Devem ser usadas apenas as bibliotecas em destaque abaixo:
 
         # Bibliotecas
@@ -24,21 +23,34 @@ def generate_test_case_script(use_case, test_case):
         from selenium.webdriver.chrome.options import Options
         from selenium.webdriver.chrome.service import Service
         import time
+
+        Consulte a base de arquivos interna buscando: {dict_files[document]}.html, {dict_files[document]}.css e {dict_files[document]}.js.
+        Além disso, considere o cenário de teste {test_case} para elaborar o script.
+
+        # Saída
+        Script python com comentários em português, objetivos e claros para auxiliar a pessoa desenvolvedora.
     """
 
-    user_prompt = f"""
-        Considere o caso de uso {use_case} e o cenário de teste {test_case}.
-
-        Crie um script para gerar um teste automatizado.
-    """
-
-    response = cliente.chat.completions.create(
-        model='gpt-4o-mini',
-        messages = [
-            {'role': 'system', 'content': system_prompt},
-            {'role': 'user', 'content': user_prompt}
-        ],
-        temperature=0.5
+    cliente.beta.threads.messages.create(
+        thread_id=thread.id,
+        role = 'user',
+        content = question
     )
 
-    return response.choices[0].message.content
+    run = cliente.beta.threads.runs.create(
+        model=model,
+        thread_id=thread.id,
+        assistant_id=assistant.id,
+        tools=[{'type':'file_search'}]
+    )
+    
+    while run.status != STATUS_COMPLETED:
+        run = cliente.beta.threads.runs.retrieve(run.id, thread_id=thread.id)
+        print(run.status)
+
+        if run.status == STATUS_FAILED:
+            raise Exception('Erro ao gerar caso de uso')
+    
+    messages = cliente.beta.threads.messages.list(thread_id=thread.id)
+    
+    return messages.data[0].content[0].text.value

@@ -6,24 +6,41 @@ import os
 load_dotenv()
 
 cliente = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+STATUS_COMPLETED = 'completed'
+STATUS_FAILED = 'failed'
 
-def generate_use_case(user_prompt, model = REFINED_MODEL):
-    system_prompt = f"""
-        Você é um especialista em descrever casos de uso. Você deve adotar o padrão abaixo para gerar seu caso de uso:
-        
+def generate_use_case(user_prompt, assistant, thread, model=STANDARD_MODEL):
+    question = f"""
+        Gere um caso de uso para: {user_prompt}
+
+        Busque nos arquivos associados a você o conteúdo de exemplo de casos de uso (arquivo exemplos_casos_uso.txt).
+
+        Adote o seguinte template para gerar o caso de uso:        
+
         # Formato de Saída
         *Nome da Persona*, em *contexto do app*, precisa realizar *tarefa* no aplicativo. Logo, *benefício esperado*, para isso ela *descrição detalhada da tarefa realizada*.
-
-        Considere os dados de entrada sugeridos pelo usuário e gere caso de uso no formato adequado.
     """
 
-    response = cliente.chat.completions.create(
-        model=model,
-        messages = [
-            {'role': 'system', 'content': system_prompt},
-            {'role': 'user', 'content': user_prompt}
-        ],
-        temperature=0.5
+    cliente.beta.threads.messages.create(
+        thread_id=thread.id,
+        role = 'user',
+        content = question
     )
 
-    return response.choices[0].message.content
+    run = cliente.beta.threads.runs.create(
+        model=model,
+        thread_id=thread.id,
+        assistant_id=assistant.id,
+        tools=[{'type':'file_search'}]
+    )
+    
+    while run.status != STATUS_COMPLETED:
+        run = cliente.beta.threads.runs.retrieve(run.id, thread_id=thread.id)
+        print(run.status)
+
+        if run.status == STATUS_FAILED:
+            raise Exception('Erro ao gerar caso de uso')
+        
+    messages = cliente.beta.threads.messages.list(thread_id=thread.id)
+    
+    return messages.data[0].content[0].text.value
