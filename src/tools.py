@@ -1,3 +1,6 @@
+REFINED_MODEL = 'ft:gpt-4o-mini-2024-07-18:org-jackson:test-automation:Avn7TEbW'
+STANDARD_MODEL = 'gpt-4o-mini'
+
 def load_file(fname):
     try:
         with open(fname, 'r') as f:
